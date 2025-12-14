@@ -92,4 +92,17 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Add C++ split fisheye node
+add_executable(split_fisheye src/split_fisheye.cpp)
+ament_target_dependencies(split_fisheye
+  rclcpp
+  cv_bridge
+  OpenCV
+)
+target_link_libraries(split_fisheye ${OpenCV_LIBRARIES})
+
+install(TARGETS split_fisheye
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()

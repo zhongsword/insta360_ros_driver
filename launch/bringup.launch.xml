@@ -2,6 +2,7 @@
 <launch>
     <arg name="equirectangular" default="false"/>
     <arg name="imu_filter" default="true"/>
+    <arg name="split_fisheye" default="true"/>  <!-- 新增：控制是否启动split_fisheye节点 -->
     <arg name="equirectangular_config" default="$(find-pkg-share insta360_ros_driver)/config/equirectangular.yaml"/>
     <arg name="imu_config" default="$(find-pkg-share insta360_ros_driver)/config/imu_filter.yaml"/>
 
@@ -17,6 +18,9 @@
         <!-- If you want to minimize the CPU load the most, you can decode only the i-frames. But the expected FPS is about 1-2 FPS -->
         <param name="i_frame_only" value="false"/> 
     </node>
+
+    <!-- Split Fisheye Node (no config needed - topic names are hard-coded in code) -->
+    <node if="$(var split_fisheye)" pkg="insta360_ros_driver" exec="split_fisheye" name="split_fisheye" output="log"/>
 
     <!-- Creates Equirectangular Images -->
     <node if="$(var equirectangular)" pkg="insta360_ros_driver" exec="equirectangular_cpp" name="equirectangular_node" output="screen">
