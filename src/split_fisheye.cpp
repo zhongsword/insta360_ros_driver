@@ -11,7 +11,7 @@ SplitFisheyeNode::SplitFisheyeNode()
 
     // Subscribe to the dual fisheye image topic
     dual_fisheye_sub_ = create_subscription<sensor_msgs::msg::Image>(
-        "/dual_fisheye/image", qos,
+        "/dual_fisheye/image", rclcpp::SensorDataQoS(),
         std::bind(&SplitFisheyeNode::imageCallback, this, std::placeholders::_1));
 
     // Create publishers for left and right fisheye images

@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <atomic>
+#include <algorithm>
 
 #include <camera/camera.h>
 #include <camera/photography_settings.h>
@@ -19,12 +20,59 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr compressed_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
 
+    // Cache for SPS and PPS to prepend to frames if missing
+    std::vector<uint8_t> sps_nal_;
+    std::vector<uint8_t> pps_nal_;
+    bool have_sps_pps_ = false;
+
+    // Helper to find NAL units and extract SPS/PPS
+    void ExtractSpsPps(const uint8_t* data, size_t size) {
+        const uint8_t* end = data + size;
+        const uint8_t* p = data;
+        
+        auto find_start = [](const uint8_t* cur, const uint8_t* end) -> const uint8_t* {
+            const uint8_t* p2 = cur;
+            while (p2 + 3 < end) {
+                if (p2[0] == 0x00 && p2[1] == 0x00 && 
+                   ((p2[2] == 0x01) || (p2[2] == 0x00 && p2 + 4 < end && p2[3] == 0x01))) {
+                    return p2;
+                }
+                ++p2;
+            }
+            return end;
+        };
+
+        while (p < end) {
+            const uint8_t* sc = find_start(p, end);
+            if (sc == end) break;
+            
+            const uint8_t* nal_start = sc;
+            size_t sc_size = (sc + 3 < end && sc[2] == 0x01) ? 3 : 4;
+            nal_start += sc_size;
+            
+            if (nal_start >= end) break;
+            const uint8_t* next_sc = find_start(nal_start, end);
+            const uint8_t* nal_end = next_sc;
+            
+            if (nal_end <= nal_start) break;
+
+            uint8_t nal_type = nal_start[0] & 0x1F;
+            if (nal_type == 7) { // SPS
+                sps_nal_.assign(nal_start, nal_end);
+            } else if (nal_type == 8) { // PPS
+                pps_nal_.assign(nal_start, nal_end);
+            }
+            p = nal_end;
+        }
+        have_sps_pps_ = !sps_nal_.empty() && !pps_nal_.empty();
+    }
+
 public:
     TestStreamDelegate(const std::shared_ptr<rclcpp::Node>& node) : node_(node) {
         // Publisher for the compressed H.264 video stream
         compressed_pub_ = node_->create_publisher<sensor_msgs::msg::CompressedImage>(
             "/dual_fisheye/image/compressed", 
-            rclcpp::QoS(10)
+            rclcpp::SensorDataQoS()
         );
 
         // Publisher for IMU data (remains the same)
@@ -39,18 +87,37 @@ public:
     void OnVideoData(const uint8_t* data, size_t size, int64_t timestamp, uint8_t streamType, int stream_index) override {
         // We only care about the main video stream (index 0)
         if (stream_index == 0 && size > 0 && compressed_pub_) {
+            // Extract SPS/PPS from the current frame if present
+            ExtractSpsPps(data, size);
+
             auto msg = std::make_unique<sensor_msgs::msg::CompressedImage>();
 
-            // Set the header
-            msg->header.stamp = node_->get_clock()->now();
+            // Set the header with accurate timestamp from camera
+            msg->header.stamp.sec = timestamp / 1000000;  // Convert microseconds to seconds
+            msg->header.stamp.nanosec = (timestamp % 1000000) * 1000;  // Remaining to nanoseconds
             msg->header.frame_id = "camera_frame";
 
-            // Set the format to H.264
-            // The subscriber will need to know this to select the correct decoder.
+            // Set the format to H.264 (based on current resolution < 5.7k)
             msg->format = "h264";
 
-            // Copy the compressed video data directly into the message
-            msg->data.assign(data, data + size);
+            // If we have cached SPS/PPS, prepend them to ensure every frame has parameter sets
+            std::vector<uint8_t> packet_data;
+            static const uint8_t start_code[4] = {0x00, 0x00, 0x00, 0x01};
+            
+            if (have_sps_pps_) {
+                // Prepend SPS
+                packet_data.insert(packet_data.end(), start_code, start_code + 4);
+                packet_data.insert(packet_data.end(), sps_nal_.begin(), sps_nal_.end());
+                // Prepend PPS
+                packet_data.insert(packet_data.end(), start_code, start_code + 4);
+                packet_data.insert(packet_data.end(), pps_nal_.begin(), pps_nal_.end());
+            }
+            
+            // Append the original frame data
+            packet_data.insert(packet_data.end(), data, data + size);
+
+            // Copy the modified data into the message
+            msg->data.assign(packet_data.begin(), packet_data.end());
 
             compressed_pub_->publish(std::move(msg));
         }
