@@ -1,0 +1,6 @@
+fisheye_calibrator:
+  ros__parameters:
+    chessboard_size: [9, 6]
+    square_size: 0.025
+    calibration_images: 20
+    output_file: "$(find-pkg-share insta360_ros_driver)/config/fisheye_calibration.yaml"

@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Arguments for calibration -->
+    <arg name="chessboard_size" default="[9,6]"/>
+    <arg name="square_size" default="0.025"/>
+    <arg name="calibration_images" default="20"/>
+    <arg name="output_file" default="$(find-pkg-share insta360_ros_driver)/config/fisheye_calibration.yaml"/>
+
+    <!-- Set library path -->
+    <set_env name="LD_LIBRARY_PATH" value="/opt/ros/humble/lib:$(find-pkg-share insta360_ros_driver)/lib:$LD_LIBRARY_PATH"/>
+    <set_env name="PYTHONPATH" value="/opt/ros/humble/local/lib/python3.10/dist-packages:/opt/ros/humble/lib/python3.10/site-packages:$PYTHONPATH"/>
+
+    <!-- Publishes Compressed Images -->
+    <node pkg="insta360_ros_driver" exec="insta360_ros_driver" name="insta360_ros_driver" output="log"/>
+
+    <!-- Decodes Compressed Images -->
+    <node pkg="insta360_ros_driver" exec="decoder" name="image_decoder" output="log">
+        <param name="compressed_topic" value="/dual_fisheye/image/compressed"/>
+        <param name="uncompressed_topic" value="/dual_fisheye/image"/>
+        <param name="skip_frame" value="0"/>
+        <param name="i_frame_only" value="true"/>
+    </node>
+
+    <!-- Split Fisheye Node -->
+    <node pkg="insta360_ros_driver" exec="split_fisheye" name="split_fisheye" output="log"/>
+
+    <!-- Fisheye Calibrator Node -->
+    <executable cmd="python3 /home/syo/ros2_ws/install/insta360_ros_driver/lib/insta360_ros_driver/fisheye_calibrator.py --ros-args --params-file $(find-pkg-share insta360_ros_driver)/launch/calibration_params.yaml" output="screen"/>
+</launch>
