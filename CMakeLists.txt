@@ -89,6 +89,7 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/equirectangular.py
   scripts/calibrate.py
+  scripts/fisheye_calibrator.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
